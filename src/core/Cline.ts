@@ -56,6 +56,16 @@ type UserContent = Array<
 	Anthropic.TextBlockParam | Anthropic.ImageBlockParam | Anthropic.ToolUseBlockParam | Anthropic.ToolResultBlockParam
 >
 
+const ALLOWED_AUTO_EXECUTE_COMMANDS = [
+	'npm',
+	'npx',
+	'tsc',
+	'git log',
+	'git diff',
+	'git show',
+	'list'
+] as const
+
 export class Cline {
 	readonly taskId: string
 	api: ApiHandler
@@ -65,6 +75,9 @@ export class Cline {
 	private didEditFile: boolean = false
 	customInstructions?: string
 	alwaysAllowReadOnly: boolean
+	alwaysAllowWrite: boolean
+	alwaysAllowExecute: boolean
+
 	apiConversationHistory: Anthropic.MessageParam[] = []
 	clineMessages: ClineMessage[] = []
 	private askResponse?: ClineAskResponse
@@ -86,7 +99,6 @@ export class Cline {
 	private userMessageContent: (Anthropic.TextBlockParam | Anthropic.ImageBlockParam)[] = []
 	private userMessageContentReady = false
 	private didRejectTool = false
-	private didAlreadyUseTool = false
 	private didCompleteReadingStream = false
 
 	constructor(
@@ -94,6 +106,8 @@ export class Cline {
 		apiConfiguration: ApiConfiguration,
 		customInstructions?: string,
 		alwaysAllowReadOnly?: boolean,
+		alwaysAllowWrite?: boolean,
+		alwaysAllowExecute?: boolean,
 		task?: string,
 		images?: string[],
 		historyItem?: HistoryItem
@@ -106,6 +120,8 @@ export class Cline {
 		this.diffViewProvider = new DiffViewProvider(cwd)
 		this.customInstructions = customInstructions
 		this.alwaysAllowReadOnly = alwaysAllowReadOnly ?? false
+		this.alwaysAllowWrite = alwaysAllowWrite ?? false
+		this.alwaysAllowExecute = alwaysAllowExecute ?? false		
 
 		if (historyItem) {
 			this.taskId = historyItem.id
@@ -212,6 +228,25 @@ export class Cline {
 		} catch (error) {
 			console.error("Failed to save cline messages:", error)
 		}
+	}
+
+	protected isAllowedCommand(command?: string): boolean {
+		if (!command) {
+			return false;
+		}
+		// Check for command chaining characters
+		if (command.includes('&&') ||
+			command.includes(';') ||
+			command.includes('||') ||
+			command.includes('|') ||
+			command.includes('$(') ||
+			command.includes('`')) {
+			return false;
+		}
+		const trimmedCommand = command.trim().toLowerCase();
+		return ALLOWED_AUTO_EXECUTE_COMMANDS.some(prefix => 
+			trimmedCommand.startsWith(prefix.toLowerCase())
+		);
 	}
 
 	// Communicate with webview
@@ -829,7 +864,7 @@ export class Cline {
 		const block = cloneDeep(this.assistantMessageContent[this.currentStreamingContentIndex]) // need to create copy bc while stream is updating the array, it could be updating the reference block properties too
 		switch (block.type) {
 			case "text": {
-				if (this.didRejectTool || this.didAlreadyUseTool) {
+				if (this.didRejectTool) {
 					break
 				}
 				let content = block.content
@@ -916,15 +951,6 @@ export class Cline {
 					break
 				}
 
-				if (this.didAlreadyUseTool) {
-					// ignore any content after a tool has already been used
-					this.userMessageContent.push({
-						type: "text",
-						text: `Tool [${block.name}] was not executed because a tool has already been used in this message. Only one tool may be used per message. You must assess the first tool's result before proceeding to use the next tool.`,
-					})
-					break
-				}
-
 				const pushToolResult = (content: ToolResponse) => {
 					this.userMessageContent.push({
 						type: "text",
@@ -938,8 +964,6 @@ export class Cline {
 					} else {
 						this.userMessageContent.push(...content)
 					}
-					// once a tool result has been collected, ignore all other tool uses since we should only ever present one tool result per message
-					this.didAlreadyUseTool = true
 				}
 
 				const askApproval = async (type: ClineAsk, partialMessage?: string) => {
@@ -1044,18 +1068,16 @@ export class Cline {
 							newContent = newContent.split("\n").slice(0, -1).join("\n").trim()
 						}
 
-						if (!this.api.getModel().id.includes("claude")) {
-							// it seems not just llama models are doing this, but also gemini and potentially others
-							if (
-								newContent.includes("&gt;") ||
-								newContent.includes("&lt;") ||
-								newContent.includes("&quot;")
-							) {
-								newContent = newContent
-									.replace(/&gt;/g, ">")
-									.replace(/&lt;/g, "<")
-									.replace(/&quot;/g, '"')
-							}
+						// it seems not just llama models are doing this, but also gemini and potentially others
+						if (
+							newContent.includes("&gt;") ||
+							newContent.includes("&lt;") ||
+							newContent.includes("&quot;")
+						) {
+							newContent = newContent
+								.replace(/&gt;/g, ">")
+								.replace(/&lt;/g, "<")
+								.replace(/&quot;/g, '"')
 						}
 
 						const sharedMessageProps: ClineSayTool = {
@@ -1066,7 +1088,11 @@ export class Cline {
 							if (block.partial) {
 								// update gui message
 								const partialMessage = JSON.stringify(sharedMessageProps)
-								await this.ask("tool", partialMessage, block.partial).catch(() => {})
+								if (this.alwaysAllowWrite) {
+									await this.say("tool", partialMessage, undefined, block.partial)
+								} else {
+									await this.ask("tool", partialMessage, block.partial).catch(() => {})
+								}
 								// update editor
 								if (!this.diffViewProvider.isEditing) {
 									// open the editor and prepare to stream content in
@@ -1096,7 +1122,11 @@ export class Cline {
 								if (!this.diffViewProvider.isEditing) {
 									// show gui message before showing edit animation
 									const partialMessage = JSON.stringify(sharedMessageProps)
-									await this.ask("tool", partialMessage, true).catch(() => {}) // sending true for partial even though it's not a partial, this shows the edit row before the content is streamed into the editor
+									if (this.alwaysAllowWrite) {
+										await this.say("tool", partialMessage, undefined, true)
+									} else {
+										await this.ask("tool", partialMessage, true).catch(() => {}) // sending true for partial even though it's not a partial, this shows the edit row before the content is streamed into the editor
+									}
 									await this.diffViewProvider.open(relPath)
 								}
 								await this.diffViewProvider.update(newContent, true)
@@ -1115,7 +1145,7 @@ export class Cline {
 										  )
 										: undefined,
 								} satisfies ClineSayTool)
-								const didApprove = await askApproval("tool", completeMessage)
+								const didApprove = this.alwaysAllowWrite || (await askApproval("tool", completeMessage))
 								if (!didApprove) {
 									await this.diffViewProvider.revertChanges()
 									break
@@ -1506,9 +1536,13 @@ export class Cline {
 						const command: string | undefined = block.params.command
 						try {
 							if (block.partial) {
-								await this.ask("command", removeClosingTag("command", command), block.partial).catch(
-									() => {}
-								)
+								if (this.alwaysAllowExecute && this.isAllowedCommand(command)) {
+									await this.say("command", command, undefined, block.partial)
+								} else {
+									await this.ask("command", removeClosingTag("command", command), block.partial).catch(
+										() => {}
+									)
+								}								
 								break
 							} else {
 								if (!command) {
@@ -1519,7 +1553,7 @@ export class Cline {
 									break
 								}
 								this.consecutiveMistakeCount = 0
-								const didApprove = await askApproval("command", command)
+								const didApprove = (this.alwaysAllowExecute && this.isAllowedCommand(command)) || (await askApproval("command", command))
 								if (!didApprove) {
 									break
 								}
@@ -1704,7 +1738,7 @@ export class Cline {
 		*/
 		this.presentAssistantMessageLocked = false // this needs to be placed here, if not then calling this.presentAssistantMessage below would fail (sometimes) since it's locked
 		// NOTE: when tool is rejected, iterator stream is interrupted and it waits for userMessageContentReady to be true. Future calls to present will skip execution since didRejectTool and iterate until contentIndex is set to message length and it sets userMessageContentReady to true itself (instead of preemptively doing it in iterator)
-		if (!block.partial || this.didRejectTool || this.didAlreadyUseTool) {
+		if (!block.partial || this.didRejectTool) {
 			// block is finished streaming and executing
 			if (this.currentStreamingContentIndex === this.assistantMessageContent.length - 1) {
 				// its okay that we increment if !didCompleteReadingStream, it'll just return bc out of bounds and as streaming continues it will call presentAssitantMessage if a new block is ready. if streaming is finished then we set userMessageContentReady to true when out of bounds. This gracefully allows the stream to continue on and all potential content blocks be presented.
@@ -1864,7 +1898,6 @@ export class Cline {
 			this.userMessageContent = []
 			this.userMessageContentReady = false
 			this.didRejectTool = false
-			this.didAlreadyUseTool = false
 			this.presentAssistantMessageLocked = false
 			this.presentAssistantMessageHasPendingUpdates = false
 			await this.diffViewProvider.reset()
@@ -1907,14 +1940,6 @@ export class Cline {
 						// userContent has a tool rejection, so interrupt the assistant's response to present the user's feedback
 						assistantMessage += "\n\n[Response interrupted by user feedback]"
 						// this.userMessageContentReady = true // instead of setting this premptively, we allow the present iterator to finish and set userMessageContentReady when its ready
-						break
-					}
-
-					// PREV: we need to let the request finish for openrouter to get generation details
-					// UPDATE: it's better UX to interrupt the request at the cost of the api cost not being retrieved
-					if (this.didAlreadyUseTool) {
-						assistantMessage +=
-							"\n\n[Response interrupted by a tool use result. Only one tool may be used at a time and should be placed at the end of the message.]"
 						break
 					}
 				}

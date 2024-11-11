@@ -52,6 +52,7 @@
     ]
   },
   "devDependencies": {
-    "@types/vscode-webview": "^1.57.5"
+    "@types/vscode-webview": "^1.57.5",
+    "ajv": "^8.17.1"
   }
 }
