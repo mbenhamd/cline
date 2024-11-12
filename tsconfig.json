@@ -1,25 +1,55 @@
 {
-	"compilerOptions": {
-		"esModuleInterop": true,
-		"experimentalDecorators": true,
-		"forceConsistentCasingInFileNames": true,
-		"isolatedModules": true,
-		"lib": ["es2022", "esnext.disposable", "DOM"],
-		"module": "esnext",
-		"moduleResolution": "Bundler",
-		"noFallthroughCasesInSwitch": true,
-		"noImplicitOverride": true,
-		"noImplicitReturns": true,
-		"noUnusedLocals": false,
-		"resolveJsonModule": true,
-		"rootDir": ".",
-		"skipLibCheck": true,
-		"sourceMap": true,
-		"strict": true,
-		"target": "es2022",
-		"useDefineForClassFields": true,
-		"useUnknownInCatchVariables": false
-	},
-	"include": ["src/**/*", "scripts/**/*"],
-	"exclude": ["node_modules", ".vscode-test", "webview-ui"]
+    "compilerOptions": {
+        "esModuleInterop": true,
+        "experimentalDecorators": true,
+        "forceConsistentCasingInFileNames": true,
+        "isolatedModules": true,
+        "lib": ["es2022", "esnext.disposable", "DOM"],
+        "module": "esnext",
+        "moduleResolution": "Bundler",
+        "noFallthroughCasesInSwitch": true,
+        "noImplicitOverride": true,
+        "noImplicitReturns": true,
+        "noUnusedLocals": true,
+        "noUnusedParameters": true,
+        "noUncheckedIndexedAccess": true,
+        "noImplicitThis": true,
+        "noPropertyAccessFromIndexSignature": true,
+        "resolveJsonModule": true,
+        "rootDir": ".",
+        "skipLibCheck": true,
+        "sourceMap": true,
+        "strict": true,
+        "target": "es2022",
+        "useDefineForClassFields": true,
+        "useUnknownInCatchVariables": true,
+        "baseUrl": ".",
+        "paths": {
+            "@/*": ["src/*"],
+            "@api/*": ["src/api/*"],
+            "@core/*": ["src/core/*"],
+            "@services/*": ["src/services/*"],
+            "@shared/*": ["src/shared/*"],
+            "@utils/*": ["src/utils/*"],
+            "@integrations/*": ["src/integrations/*"]
+        },
+        "declaration": true,
+        "declarationMap": true,
+        "incremental": true,
+        "composite": true,
+        "tsBuildInfoFile": "./dist/.tsbuildinfo"
+    },
+    "include": [
+        "src/**/*",
+        "scripts/**/*",
+        "*.js",
+        "*.ts"
+    ],
+    "exclude": [
+        "node_modules",
+        ".vscode-test",
+        "webview-ui",
+        "dist",
+        "out"
+    ]
 }

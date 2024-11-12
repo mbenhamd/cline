@@ -1,0 +1,30 @@
+{
+    "extends": "./tsconfig.json",
+    "compilerOptions": {
+        "types": ["jest", "node", "vscode"],
+        "module": "commonjs",
+        "moduleResolution": "node",
+        "esModuleInterop": true,
+        "allowJs": true,
+        "checkJs": false,
+        "jsx": "react",
+        "noEmit": true,
+        "baseUrl": ".",
+        "paths": {
+            "@/*": ["src/*"],
+            "@api/*": ["src/api/*"],
+            "@core/*": ["src/core/*"],
+            "@services/*": ["src/services/*"],
+            "@shared/*": ["src/shared/*"],
+            "@utils/*": ["src/utils/*"],
+            "@integrations/*": ["src/integrations/*"]
+        }
+    },
+    "include": [
+        "src/**/*.test.ts",
+        "src/**/*.spec.ts",
+        "src/test/**/*.ts",
+        "jest.config.js",
+        "jest.setup.ts"
+    ]
+}
